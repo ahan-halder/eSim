@@ -24,11 +24,11 @@ ghdl="ghdl-4.1.0"
 verilator="verilator-4.210"
 config_dir="$HOME/.nghdl"
 config_file="config.ini"
-src_dir=`pwd`
+src_dir="$(pwd)"
 
 # Will be used to take backup of any file
 sysdate="$(date)"
-timestamp=`echo $sysdate|awk '{print $3"_"$2"_"$6"_"$4 }'`
+timestamp=$(echo "$sysdate" | awk '{print $3"_"$2"_"$6"_"$4}')
 
 
 # All functions goes here
@@ -41,205 +41,159 @@ error_exit() {
 
 function installDependency
 {
-
     echo "Installing dependencies for $ghdl LLVM................"
 
     echo "Installing Make..........................................."
     sudo apt install -y make
-    
+
     echo "Installing GNAT..........................................."
     sudo apt install -y gnat
 
-    echo "Installing LLVM 18 for GHDL 4.1.0........................................"
+    echo "Installing LLVM 18 for GHDL 4.1.0......................."
     sudo apt install -y llvm-18 llvm-18-dev
 
-    echo "Installing Clang 18.........................................."
+    echo "Installing Clang 18......................................."
     sudo apt install -y clang-18
 
     echo "Installing Zlib1g-dev....................................."
     sudo apt install -y zlib1g-dev
-  
-    # Specific dependency for canberra-gtk modules
-    echo "Installing Gtk Canberra modules..........................."
-    sudo apt install -y libcanberra-gtk3-module 
 
-    # Specific dependency for nvidia graphic cards
-    echo "Installing graphics dependency for Ngspice source build"
-    echo "Installing libxaw7........................................"
-    sudo apt install -y libxaw7
+    echo "Installing Gtk Canberra module............................"
+    sudo apt install -y libcanberra-gtk3-module
 
-    echo "Installing libxaw7-dev...................................."
-    sudo apt install -y libxaw7-dev
-
+    echo "Installing graphics dependencies for Ngspice.............."
+    sudo apt install -y libxaw7 libxaw7-dev
 
     echo "Installing dependencies for $verilator...................."
-    if [[ -n "$(which apt 2> /dev/null)" ]]
-    then
-    # Ubuntu
-        sudo apt install -y make autoconf g++ flex bison
-    else [[ -n "$(which yum 2> /dev/null)" ]]
-    # Ubuntu
-        sudo yum install make autoconf flex bison which -y
-        sudo yum groupinstall 'Development Tools'  -y
-    fi
-
+    sudo apt install -y make autoconf g++ flex bison
 }
 
 
 
 function installGHDL
-{   
-
+{
     echo "Installing $ghdl LLVM................................."
-    tar xvf $ghdl.tar.gz
+
+    # Use a clean source tree so failed/privileged earlier builds cannot leave
+    # stale or root-owned build artifacts behind.
+    rm -rf "$ghdl"
+    tar xvf "$ghdl.tar.gz"
+
     echo "$ghdl successfully extracted"
     echo "Changing directory to $ghdl installation"
-    cd $ghdl/
+    cd "$ghdl" || return 1
+
     echo "Configuring $ghdl build as per requirements"
     chmod +x configure
-    # Other configure flags can be found at - https://github.com/ghdl/ghdl/blob/master/configure
     CXX=clang++-18 ./configure --with-llvm-config=/usr/bin/llvm-config-18
+
     echo "Building the install file for $ghdl LLVM"
-    make -j$(nproc)
+    make -j"$(nproc)"
     sudo make install
 
-    # set +e 		# Temporary disable exit on error
-    # trap "" ERR # Do not trap on error of any command
-    
-    # echo "Removing unused part of $ghdl LLVM"
-    # sudo rm -rf ../$ghdl
-    
-    # set -e 		# Re-enable exit on error
-    # trap error_exit ERR
-
     echo "GHDL installed successfully"
-    cd ../
-    
+    cd "$src_dir" || return 1
 }
 
 
 function installVerilator
-{   
-    
+{
     echo "Installing $verilator......................."
-    tar -xvf $verilator.tar.xz
+
+    rm -rf "$verilator"
+    tar -xvf "$verilator.tar.xz"
+
     echo "$verilator successfully extracted"
     echo "Changing directory to $verilator installation"
-    cd $verilator
+    cd "$verilator" || return 1
+
     echo "Configuring $verilator build as per requirements"
     chmod +x configure
     ./configure
-    make -j$(nproc)
+    make -j"$(nproc)"
     sudo make install
-    echo "Removing the unessential verilator files........"
-    rm -r docs
-    rm -r examples
-    rm -r include
-    rm -r test_regress
-    rm -r bin
-    ls -1 | grep -E -v 'config.status|configure.ac|Makefile.in|verilator.1|configure|Makefile|src|verilator.pc' | xargs rm -f
-    #sudo rm -v -r'!("config.status"|"configure.ac"|"Makefile.in"|"verilator.1"|"configure"|"Makefile"|"src"|"verilator.pc")'
+
+    echo "Removing unessential Verilator files........"
+    rm -rf docs examples include test_regress bin
+    ls -1 | grep -E -v 'config.status|configure.ac|Makefile.in|verilator.1|configure|Makefile|src|verilator.pc' | xargs -r rm -f
 
     echo "Verilator installed successfully"
-    cd ../
-
+    cd "$src_dir" || return 1
 }
 
 
 function installNGHDL
 {
-
     echo "Installing NGHDL........................................"
 
-    # Extracting NGHDL to Home Directory
-    cd $src_dir
-    tar -xJf $nghdl-source.tar.xz -C $HOME
-    mv $HOME/$nghdl-source $HOME/$nghdl
+    local source_archive="$src_dir/${nghdl}-source.tar.xz"
+    local extracted_dir="$HOME/${nghdl}-source"
+    local install_root="$HOME/$nghdl"
 
-    echo "NGHDL extracted sucessfully to $HOME"
-    # Change to nghdl directory
-    cd $HOME/$nghdl
-    # Make local install directory
-    mkdir -p install_dir
-    # Make release directory for build
-    mkdir -p release
-    # Change to release directory
-    cd release
+    # Make repeated installation deterministic instead of nesting a new
+    # source tree inside a previous installation.
+    rm -rf "$extracted_dir" "$install_root"
+
+    tar -xJf "$source_archive" -C "$HOME"
+    mv "$extracted_dir" "$install_root"
+
+    echo "NGHDL extracted successfully to $install_root"
+
+    mkdir -p "$install_root/install_dir"
+    mkdir -p "$install_root/release"
+    cd "$install_root/release" || return 1
+
     echo "Configuring NGHDL..........."
-    sleep 2
-    
     chmod +x ../configure
-    ../configure --enable-xspice --disable-debug  --prefix=$HOME/$nghdl/install_dir/ --exec-prefix=$HOME/$nghdl/install_dir/
-            
-    # Adding patch to Ngspice base code
-    # cp $src_dir/src/outitf.c $HOME/$nghdl/src/frontend
+    ../configure \
+        --enable-xspice \
+        --disable-debug \
+        --prefix="$install_root/install_dir/" \
+        --exec-prefix="$install_root/install_dir/"
 
-    make -j$(nproc)
+    make -j"$(nproc)"
     make install
 
-    # Make it executable
-    sudo chmod 755 $HOME/$nghdl/install_dir/bin/ngspice
-    
-    set +e 		# Temporary disable exit on error
-    trap "" ERR # Do not trap on error of any command
+    sudo chmod 755 "$install_root/install_dir/bin/ngspice"
 
-    echo "Removing previously installed Ngspice (if any)"    
+    # Remove a distro ngspice package if present, then point /usr/bin/ngspice
+    # at the NGHDL build.
+    set +e
+    trap "" ERR
+    echo "Removing previously installed Ngspice package (if any)"
     sudo apt-get purge -y ngspice
-
-    echo "NGHDL installed sucessfully"
-    echo "Adding softlink for the installed Ngspice"
-
-    # Add symlink to the path
-    sudo rm /usr/bin/ngspice
-
-    set -e 		# Re-enable exit on error
+    sudo rm -f /usr/bin/ngspice
+    set -e
     trap error_exit ERR
 
-    sudo ln -sf $HOME/$nghdl/install_dir/bin/ngspice /usr/bin/ngspice
-    echo "Added softlink for Ngspice....."
+    sudo ln -sf "$install_root/install_dir/bin/ngspice" /usr/bin/ngspice
+    echo "NGHDL installed successfully"
+    echo "Added symlink for Ngspice."
 
+    cd "$src_dir" || return 1
 }
 
 
 function createConfigFile
 {
+    mkdir -p "$config_dir"
+    : > "$config_dir/$config_file"
 
-    # Creating config.ini file and adding configuration information
-    # Check if config file is present
-    if [ -d $config_dir ];then
-        rm $config_dir/$config_file && touch $config_dir/$config_file
-    else
-        mkdir $config_dir && touch $config_dir/$config_file
-    fi
-
-    echo "[NGHDL]" >> $config_dir/$config_file
-    echo "NGHDL_HOME = $HOME/$nghdl" >> $config_dir/$config_file
-    echo "DIGITAL_MODEL = %(NGHDL_HOME)s/src/xspice/icm" >> $config_dir/$config_file
-    echo "RELEASE = %(NGHDL_HOME)s/release" >> $config_dir/$config_file
-    echo "[SRC]" >> $config_dir/$config_file
-    echo "SRC_HOME = $src_dir" >> $config_dir/$config_file
-    echo "LICENSE = %(SRC_HOME)s/LICENSE" >> $config_dir/$config_file
-
+    echo "[NGHDL]" >> "$config_dir/$config_file"
+    echo "NGHDL_HOME = $HOME/$nghdl" >> "$config_dir/$config_file"
+    echo "DIGITAL_MODEL = %(NGHDL_HOME)s/src/xspice/icm" >> "$config_dir/$config_file"
+    echo "RELEASE = %(NGHDL_HOME)s/release" >> "$config_dir/$config_file"
+    echo "[SRC]" >> "$config_dir/$config_file"
+    echo "SRC_HOME = $src_dir" >> "$config_dir/$config_file"
+    echo "LICENSE = %(SRC_HOME)s/LICENSE" >> "$config_dir/$config_file"
 }
 
 
 function createSoftLink
 {
-    # Make it executable
-    sudo chmod 755 $src_dir/src/ngspice_ghdl.py
-
-    # Creating softlink
-    cd /usr/local/bin
-    if [[ -L nghdl ]];then
-        echo "Symlink was already present"
-        sudo unlink nghdl
-    fi
-    
-    sudo ln -sf $src_dir/src/ngspice_ghdl.py nghdl
-    echo "Added softlink for NGHDL....."
-
-    cd $pwd
-
+    sudo chmod 755 "$src_dir/src/ngspice_ghdl.py"
+    sudo ln -sf "$src_dir/src/ngspice_ghdl.py" /usr/local/bin/nghdl
+    echo "Added symlink for NGHDL."
 }
 
 
@@ -258,7 +212,7 @@ else
 fi
 
 ## Checking flags
-if [ $option == "--install" ];then
+if [ "$option" == "--install" ];then
     
     set -e  # Set exit option immediately on error
     set -E  # inherit ERR trap by shell functions
@@ -279,29 +233,32 @@ if [ $option == "--install" ];then
     createConfigFile
     createSoftLink
 
-elif [ $option == "--uninstall" ];then
-    sudo rm -rf $HOME/$nghdl $HOME/.nghdl /usr/share/kicad/library/eSim_Nghdl.lib /usr/local/bin/nghdl /usr/bin/ngspice
+elif [ "$option" == "--uninstall" ];then
+    echo "Removing NGHDL installation..........................."
 
-    echo "Removing GHDL......................"
-    cd $ghdl/
-    sudo make uninstall
-    cd ../
-    sudo rm -rf $ghdl/
-    # sudo rm -rf /usr/local/bin/ghdl /usr/local/bin/ghdl1-llvm /usr/local/lib/ghdl /usr/local/lib/libghdlvpi.so /usr/local/include/vpi_user.h
+    if [ -d "$src_dir/$ghdl" ]; then
+        (
+            cd "$src_dir/$ghdl" || exit 1
+            sudo make uninstall
+        ) || echo "Warning: GHDL make uninstall reported an error."
+    fi
 
-    echo "Removing Verilator................."
-    cd $verilator/
-    sudo make uninstall
-    cd ../
-    sudo rm -rf $verilator/
+    if [ -d "$src_dir/$verilator" ]; then
+        (
+            cd "$src_dir/$verilator" || exit 1
+            sudo make uninstall
+        ) || echo "Warning: Verilator make uninstall reported an error."
+    fi
 
-    echo "Removing libxaw7-dev..............."
-    sudo apt purge -y libxaw7-dev
-    echo "Keeping shared LLVM 18 and Clang 18 system dependencies installed."
-    echo "Removing GNAT......................"
-    sudo apt purge -y gnat
+    rm -rf "$src_dir/$ghdl" "$src_dir/$verilator"
+    rm -rf "$HOME/$nghdl" "$HOME/.nghdl"
+    sudo rm -f /usr/local/bin/nghdl /usr/bin/ngspice
+
+    echo "Keeping shared LLVM 18, Clang 18, GNAT and build dependencies installed."
+    echo "NGHDL uninstall completed."
 else 
     echo "Please select the proper operation."
     echo "--install"
     echo "--uninstall"
 fi
+

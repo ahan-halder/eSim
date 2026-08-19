@@ -23,7 +23,7 @@
 # All variables goes here
 config_dir="$HOME/.esim"
 config_file="config.ini"
-eSim_Home=`pwd`
+eSim_Home="$(pwd)"
 installer_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ngspiceFlag=0
 
@@ -40,83 +40,66 @@ error_exit()
 
 function createConfigFile
 {
+    mkdir -p "$config_dir"
+    : > "$config_dir/$config_file"
 
-    # Creating config.ini file and adding configuration information
-    # Check if config file is present
-    if [ -d $config_dir ];then
-        rm $config_dir/$config_file && touch $config_dir/$config_file
-    else
-        mkdir $config_dir && touch $config_dir/$config_file
-    fi
-    
-    echo "[eSim]" >> $config_dir/$config_file
-    echo "eSim_HOME = $eSim_Home" >> $config_dir/$config_file
-    echo "LICENSE = %(eSim_HOME)s/LICENSE" >> $config_dir/$config_file
-    echo "KicadLib = %(eSim_HOME)s/library/kicadLibrary.tar.xz" >> $config_dir/$config_file
-    echo "IMAGES = %(eSim_HOME)s/images" >> $config_dir/$config_file
-    echo "VERSION = %(eSim_HOME)s/VERSION" >> $config_dir/$config_file
-    echo "MODELICA_MAP_JSON = %(eSim_HOME)s/library/ngspicetoModelica/Mapping.json" >> $config_dir/$config_file
-   
+    echo "[eSim]" >> "$config_dir/$config_file"
+    echo "eSim_HOME = $eSim_Home" >> "$config_dir/$config_file"
+    echo "LICENSE = %(eSim_HOME)s/LICENSE" >> "$config_dir/$config_file"
+    echo "KicadLib = %(eSim_HOME)s/library/kicadLibrary.tar.xz" >> "$config_dir/$config_file"
+    echo "IMAGES = %(eSim_HOME)s/images" >> "$config_dir/$config_file"
+    echo "VERSION = %(eSim_HOME)s/VERSION" >> "$config_dir/$config_file"
+    echo "MODELICA_MAP_JSON = %(eSim_HOME)s/library/ngspicetoModelica/Mapping.json" >> "$config_dir/$config_file"
 }
 
 
 function installNghdl
 {
-
     echo "Installing NGHDL..........................."
+
+    # Always start from a fresh copy of the bundled NGHDL tree.
+    rm -rf nghdl
     unzip -o nghdl.zip
 
     echo "Applying Ubuntu 25.04 NGHDL compatibility installer..."
-
     cp "$installer_script_dir/install-nghdl-25.04.sh" \
-       nghdl/install-nghdl-scripts/install-nghdl-25.04.sh
+       "nghdl/install-nghdl-scripts/install-nghdl-25.04.sh"
+    chmod +x "nghdl/install-nghdl-scripts/install-nghdl-25.04.sh"
 
-    cd nghdl/ || return 1
-
-    chmod +x install-nghdl-scripts/install-nghdl-25.04.sh
-
-    # Allow NGHDL installer to return its own exit status.
+    # Capture the NGHDL installer's status explicitly instead of letting the
+    # parent ERR trap terminate before we can report it.
     trap "" ERR
     set +e
-
-    bash install-nghdl-scripts/install-nghdl-25.04.sh --install
+    (
+        cd nghdl || exit 1
+        bash install-nghdl-scripts/install-nghdl-25.04.sh --install
+    )
     nghdl_status=$?
-
     set -e
     trap error_exit ERR
 
     if [ "$nghdl_status" -ne 0 ]; then
         echo "NGHDL installation failed with status $nghdl_status"
-        cd ../
         return "$nghdl_status"
     fi
 
     ngspiceFlag=1
-    cd ../
-
 }
 
 
 function installSky130Pdk
 {
-
     echo "Installing SKY130 PDK......................"
-    
-    # Extract SKY130 PDK
+
     tar -xJf library/sky130_fd_pr.tar.xz
 
-    # Remove any previous sky130-fd-pdr instance, if any
     sudo rm -rf /usr/share/local/sky130_fd_pr
-
-    # Copy SKY130 library
     echo "Copying SKY130 PDK........................."
 
     sudo mkdir -p /usr/share/local/
     sudo mv sky130_fd_pr /usr/share/local/
 
-    # Change ownership from root to the user
-    sudo chown -R $USER:$USER /usr/share/local/sky130_fd_pr/
-
+    sudo chown -R "$USER:$USER" /usr/share/local/sky130_fd_pr/
 }
 
 
@@ -243,9 +226,10 @@ function installDependency
 
 function copyKicadLibrary
 {
-
     echo "Extracting custom KiCad Library..."
-    #Extract custom KiCad Library
+
+    # Remove a partial extraction from an earlier failed run.
+    rm -rf kicadLibrary
     tar -xJf library/kicadLibrary.tar.xz
 
     kicad_version="8.0"
@@ -255,79 +239,66 @@ function copyKicadLibrary
     mkdir -p "$kicad_config_dir"
 
     echo "Copying eSim symbol table..."
-    cp kicadLibrary/template/sym-lib-table \
-        "$kicad_config_dir/"
+    cp "kicadLibrary/template/sym-lib-table" \
+       "$kicad_config_dir/sym-lib-table"
 
-    echo "Copying eSim custom table..."
-    sudo cp -r kicadLibrary/eSim-symbols/* \
-        /usr/share/kicad/symbols/
+    echo "Copying eSim custom symbols..."
+    sudo mkdir -p /usr/share/kicad/symbols
+    sudo cp -f kicadLibrary/eSim-symbols/* /usr/share/kicad/symbols/
 
+    # /usr/share/kicad is system-owned; keep copied files root-owned.
     rm -rf kicadLibrary
 
-    sudo chown -R "$USER:$USER" \ /usr/share/kicad/symbols/
-
-    echo "Kicad Library configured successfully."
-
+    echo "KiCad Library configured successfully."
 }
 
 
 function createDesktopStartScript
-{    
+{
+    # Generate the eSim launcher.
+    cat > esim-start.sh <<EOF
+#!/bin/bash
+cd "$eSim_Home/src/frontEnd"
+source "$config_dir/env/bin/activate"
+python3 Application.py
+EOF
 
-    # Generating new esim-start.sh
-    echo '#!/bin/bash' > esim-start.sh
-    echo "cd $eSim_Home/src/frontEnd" >> esim-start.sh
-    echo "source $config_dir/env/bin/activate" >> esim-start.sh
-    echo "python3 Application.py" >> esim-start.sh
+    sudo install -m 0755 esim-start.sh /usr/bin/esim
+    rm -f esim-start.sh
 
-    # Make it executable
-    sudo chmod 755 esim-start.sh
-    # Copy esim start script
-    sudo cp -vp esim-start.sh /usr/bin/esim
-    # Remove local copy of esim start script
-    rm esim-start.sh
+    cat > esim.desktop <<EOF
+[Desktop Entry]
+Version=1.0
+Name=eSim
+Comment=EDA Tool
+GenericName=eSim
+Keywords=eda-tools
+Exec=esim %u
+Terminal=true
+X-MultipleArgs=false
+Type=Application
+Icon=$config_dir/logo.png
+Categories=Development;
+MimeType=text/html;text/xml;application/xhtml+xml;application/xml;application/rss+xml;application/rdf+xml;image/gif;image/jpeg;image/png;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/ftp;x-scheme-handler/chrome;video/webm;application/x-xpinstall;
+StartupNotify=true
+EOF
 
-    # Generating esim.desktop file
-    echo "[Desktop Entry]" > esim.desktop
-    echo "Version=1.0" >> esim.desktop
-    echo "Name=eSim" >> esim.desktop
-    echo "Comment=EDA Tool" >> esim.desktop
-    echo "GenericName=eSim" >> esim.desktop
-    echo "Keywords=eda-tools" >> esim.desktop
-    echo "Exec=esim %u" >> esim.desktop
-    echo "Terminal=true" >> esim.desktop
-    echo "X-MultipleArgs=false" >> esim.desktop
-    echo "Type=Application" >> esim.desktop
-    getIcon="$config_dir/logo.png"
-    echo "Icon=$getIcon" >> esim.desktop
-    echo "Categories=Development;" >> esim.desktop
-    echo "MimeType=text/html;text/xml;application/xhtml+xml;application/xml;application/rss+xml;application/rdf+xml;image/gif;image/jpeg;image/png;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/ftp;x-scheme-handler/chrome;video/webm;application/x-xpinstall;" >> esim.desktop
-    echo "StartupNotify=true" >> esim.desktop
+    chmod 755 esim.desktop
+    sudo cp -f esim.desktop /usr/share/applications/
 
-    # Make esim.desktop file executable
-    sudo chmod 755 esim.desktop
-    # Copy desktop icon file to share applications
-    sudo cp -vp esim.desktop /usr/share/applications/
-    # Copy desktop icon file to Desktop
-    cp -vp esim.desktop $HOME/Desktop/
+    # Desktop can be absent in minimal/headless installations.
+    mkdir -p "$HOME/Desktop"
+    cp -f esim.desktop "$HOME/Desktop/esim.desktop"
 
-    set +e      # Temporary disable exit on error
-    trap "" ERR # Do not trap on error of any command
-
-    # Make esim.desktop file as trusted application
-    gio set $HOME/Desktop/esim.desktop "metadata::trusted" true
-    # Set Permission and Execution bit
-    chmod a+x $HOME/Desktop/esim.desktop
-
-    # Remove local copy of esim.desktop file
-    rm esim.desktop
-
-    set -e      # Re-enable exit on error
+    set +e
+    trap "" ERR
+    gio set "$HOME/Desktop/esim.desktop" "metadata::trusted" true
+    chmod a+x "$HOME/Desktop/esim.desktop"
+    set -e
     trap error_exit ERR
 
-    # Copying logo.png to .esim directory to access as icon
-    cp -vp images/logo.png $config_dir
-
+    rm -f esim.desktop
+    cp -f images/logo.png "$config_dir/"
 }
 
 
@@ -348,7 +319,7 @@ fi
 
 ## Checking flags
 
-if [ $option == "--install" ];then
+if [ "$option" == "--install" ];then
 
     set -e  # Set exit option immediately on error
     set -E  # inherit ERR trap by shell functions
@@ -361,7 +332,7 @@ if [ $option == "--install" ];then
     
     echo -n "Is your internet connection behind proxy? (y/n): "
     read getProxy
-    if [ $getProxy == "y" -o $getProxy == "Y" ];then
+    if [ "$getProxy" == "y" -o "$getProxy" == "Y" ];then
         echo -n 'Proxy Hostname :'
         read proxyHostname
 
@@ -381,17 +352,16 @@ if [ $option == "--install" ];then
         unset ftp_proxy
         unset FTP_PROXY
 
-        export http_proxy=http://$username:$passwd@$proxyHostname:$proxyPort
-        export https_proxy=http://$username:$passwd@$proxyHostname:$proxyPort
-        export https_proxy=http://$username:$passwd@$proxyHostname:$proxyPort
-        export HTTP_PROXY=http://$username:$passwd@$proxyHostname:$proxyPort
-        export HTTPS_PROXY=http://$username:$passwd@$proxyHostname:$proxyPort
-        export ftp_proxy=http://$username:$passwd@$proxyHostname:$proxyPort
-        export FTP_PROXY=http://$username:$passwd@$proxyHostname:$proxyPort
+        export http_proxy="http://$username:$passwd@$proxyHostname:$proxyPort"
+        export https_proxy="http://$username:$passwd@$proxyHostname:$proxyPort"
+        export HTTP_PROXY="http://$username:$passwd@$proxyHostname:$proxyPort"
+        export HTTPS_PROXY="http://$username:$passwd@$proxyHostname:$proxyPort"
+        export ftp_proxy="http://$username:$passwd@$proxyHostname:$proxyPort"
+        export FTP_PROXY="http://$username:$passwd@$proxyHostname:$proxyPort"
 
         echo "Install with proxy"
 
-    elif [ $getProxy == "n" -o $getProxy == "N" ];then
+    elif [ "$getProxy" == "n" -o "$getProxy" == "N" ];then
         echo "Install without proxy"
     
     else
@@ -418,50 +388,49 @@ if [ $option == "--install" ];then
     echo "or double click on \"eSim\" icon placed on Desktop"
 
 
-elif [ $option == "--uninstall" ];then
+elif [ "$option" == "--uninstall" ];then
     echo -n "Are you sure? It will remove eSim completely including KiCad, Makerchip, NGHDL and SKY130 PDK along with their models and libraries (y/n):"
     read getConfirmation
-    if [ $getConfirmation == "y" -o $getConfirmation == "Y" ];then
+
+    if [ "$getConfirmation" == "y" -o "$getConfirmation" == "Y" ]; then
         echo "Removing eSim............................"
-        sudo rm -rf $HOME/.esim $HOME/Desktop/esim.desktop /usr/bin/esim /usr/share/applications/esim.desktop
+        rm -rf "$HOME/.esim" "$HOME/Desktop/esim.desktop"
+        sudo rm -f /usr/bin/esim /usr/share/applications/esim.desktop
+
         echo "Removing KiCad..........................."
         sudo apt purge -y kicad kicad-footprints kicad-libraries kicad-symbols kicad-templates
         sudo rm -rf /usr/share/kicad
-	sudo rm /etc/apt/sources.list.d/kicad*
-        rm -rf $HOME/.config/kicad/8.0
-
-        echo "Removing Virtual env......................."
-        sudo rm -r $config_dir/env
+        sudo rm -f /etc/apt/sources.list.d/kicad*
+        rm -rf "$HOME/.config/kicad/8.0"
 
         echo "Removing SKY130 PDK......................"
-        sudo rm -R /usr/share/local/sky130_fd_pr
+        sudo rm -rf /usr/share/local/sky130_fd_pr
 
         echo "Removing NGHDL..........................."
-        rm -rf library/modelParamXML/Nghdl/*
-        rm -rf library/modelParamXML/Ngveri/*
-        cd nghdl/
-        if [ $? -eq 0 ];then
-        	chmod +x install-nghdl.sh
-    	    ./install-nghdl.sh --uninstall
-    	    cd ../
-    	    rm -rf nghdl
-            if [ $? -eq 0 ];then
-                echo -e "----------------eSim Uninstalled Successfully----------------"
-            else
-                echo -e "\nError while removing some files/directories in \"nghdl\". Please remove it manually"
-            fi
-        else
-            echo -e "\nCannot find \"nghdl\" directory. Please remove it manually"
-        fi
-    elif [ $getConfirmation == "n" -o $getConfirmation == "N" ];then
-        exit 0
-    else 
-        echo "Please select the right option."
-        exit 0
-    fi
+        rm -rf library/modelParamXML/Nghdl/* library/modelParamXML/Ngveri/*
 
+        if [ -d nghdl ]; then
+            if [ -f nghdl/install-nghdl-scripts/install-nghdl-25.04.sh ]; then
+                (
+                    cd nghdl || exit 1
+                    bash install-nghdl-scripts/install-nghdl-25.04.sh --uninstall
+                ) || echo "Warning: NGHDL uninstall script reported an error."
+            fi
+            rm -rf nghdl
+        else
+            echo "NGHDL source directory is not present; skipping bundled uninstall script."
+        fi
+
+        echo "----------------eSim Uninstalled Successfully----------------"
+    elif [ "$getConfirmation" == "n" -o "$getConfirmation" == "N" ]; then
+        exit 0
+    else
+        echo "Please select the right option."
+        exit 1
+    fi
 else 
     echo "Please select the proper operation."
     echo "--install"
     echo "--uninstall"
 fi
+
