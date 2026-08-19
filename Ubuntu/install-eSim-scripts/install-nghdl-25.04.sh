@@ -12,12 +12,16 @@
 #  REQUIREMENTS: ---
 #          BUGS: ---
 #         NOTES: ---
-#        AUTHOR: Fahim Khan, Rahul Paknikar, Sumanto Kar, 
-#                Harsha Narayana P, Jayanth Tatineni, Anshul Verma
+#        AUTHOR: Ahan Halder
 #  ORGANIZATION: eSim, FOSSEE group at IIT Bombay
 #       CREATED: Tuesday 02 December 2014 17:01
-#      REVISION: Monday 23 June 2025 15:20
+#      REVISION: Tuesday 19 August 2026
 #==========================================================
+#
+# This is the Ubuntu 25.04-specific NGHDL installer.
+# It is injected into the bundled NGHDL tree by install-eSim-25.04.sh
+# and replaces the original install-nghdl.sh, which only supported
+# older Ubuntu releases.
 
 nghdl="nghdl-simulator"
 ghdl="ghdl-4.1.0"
@@ -49,6 +53,11 @@ function installDependency
     echo "Installing GNAT..........................................."
     sudo apt install -y gnat
 
+    # GHDL 4.1.0 supports up to LLVM 18.  Ubuntu 25.04's default LLVM
+    # packages install LLVM 20.1.2, which is not recognised by GHDL 4.1.0's
+    # configure script ("Unhandled version llvm 20.1.2").  Installing the
+    # versioned llvm-18 / llvm-18-dev / clang-18 packages alongside the
+    # system default avoids downgrading or replacing the system LLVM.
     echo "Installing LLVM 18 for GHDL 4.1.0......................."
     sudo apt install -y llvm-18 llvm-18-dev
 
@@ -58,6 +67,9 @@ function installDependency
     echo "Installing Zlib1g-dev....................................."
     sudo apt install -y zlib1g-dev
 
+    # libcanberra-gtk-module was removed from Ubuntu 25.04 repositories.
+    # libcanberra-gtk3-module provides the same GTK3 sound-events support
+    # and is available in Ubuntu 25.04.
     echo "Installing Gtk Canberra module............................"
     sudo apt install -y libcanberra-gtk3-module
 
@@ -74,8 +86,9 @@ function installGHDL
 {
     echo "Installing $ghdl LLVM................................."
 
-    # Use a clean source tree so failed/privileged earlier builds cannot leave
-    # stale or root-owned build artifacts behind.
+    # Remove any previous build directory so that failed or partially
+    # completed builds (which may be root-owned from a prior sudo make)
+    # do not cause permission errors on the next run.
     rm -rf "$ghdl"
     tar xvf "$ghdl.tar.gz"
 
@@ -85,6 +98,12 @@ function installGHDL
 
     echo "Configuring $ghdl build as per requirements"
     chmod +x configure
+    # CXX=clang++-18 tells the C++ compiler to use Clang 18, which matches
+    # the LLVM 18 libraries.  --with-llvm-config=/usr/bin/llvm-config-18
+    # points GHDL at the versioned LLVM 18 config tool rather than the
+    # system default llvm-config (LLVM 20 on Ubuntu 25.04).  Both the
+    # compiler and llvm-config must refer to the same LLVM version;
+    # mixing versions produces link errors.
     CXX=clang++-18 ./configure --with-llvm-config=/usr/bin/llvm-config-18
 
     echo "Building the install file for $ghdl LLVM"
