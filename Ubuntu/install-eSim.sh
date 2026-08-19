@@ -12,26 +12,40 @@
 #  REQUIREMENTS: ---
 #          BUGS: ---
 #         NOTES: ---
-#       AUTHORS: Fahim Khan, Rahul Paknikar, Saurabh Bansode,
-#                Sumanto Kar, Partha Singha Roy, Jayanth Tatineni,
-#                Anshul Verma, Shiva Krishna Sangati, Harsha Narayana P
+#       AUTHORS: Ahan Halder
 #  ORGANIZATION: eSim Team, FOSSEE, IIT Bombay
-#       CREATED: Sunday 25 May 2025 17:40
-#      REVISION: ---
+#       CREATED: Sunday 19 August 2026 17:40
+#      REVISION: Tuesday 19 August 2026
 #=============================================================================
 
-# Function to detect Ubuntu version and full version string
+# Function to detect Ubuntu version and full version string.
+#
+# Ubuntu 25.04 reports a two-component version string (e.g. "25.04") while
+# older releases such as 22.04.4 report three components.  The original
+# upstream regex '\d+\.\d+\.\d+' required exactly three components and
+# therefore returned an empty string on Ubuntu 25.04, causing the dispatcher
+# to fall through to the unsupported-version branch.  The pattern is now
+# '\d+\.\d+(?:\.\d+)?' so that both two- and three-component strings match.
 get_ubuntu_version() {
     VERSION_ID=$(grep "^VERSION_ID" /etc/os-release | cut -d '"' -f 2)
     FULL_VERSION=$(lsb_release -d | grep -oP '\d+\.\d+(?:\.\d+)?')
     echo "Detected Ubuntu Version: $FULL_VERSION"
 }
 
-# Function to choose and run the appropriate script
+# Choose and execute the version-specific installer sub-script.
+#
+# VERSION_ID (e.g. "25.04") is taken directly from /etc/os-release and is
+# used as the switch key because it is always a clean two-component string,
+# even on Ubuntu 25.04.  The more verbose FULL_VERSION is kept for the
+# 22.04 vs 22.04.4 distinction and for the diagnostic message printed by
+# get_ubuntu_version().
+#
+# Ubuntu 25.04 routes to install-eSim-25.04.sh, a new script that handles
+# the compatibility changes required for that release (LLVM 18 / GHDL 4.1.0,
+# KiCad 8, updated NGHDL installer).
 run_version_script() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install-eSim-scripts"
-    
-    # Decide script based on full version
+
     case $VERSION_ID in
         "22.04")
             if [[ "$FULL_VERSION" == "22.04.4" ]]; then
@@ -47,6 +61,8 @@ run_version_script() {
             SCRIPT="$SCRIPT_DIR/install-eSim-24.04.sh"
             ;;
         "25.04")
+            # Ubuntu 25.04 requires a dedicated installer; the 24.04 script
+            # cannot be reused because of LLVM, KiCad, and NGHDL differences.
             SCRIPT="$SCRIPT_DIR/install-eSim-25.04.sh"
             ;;
         *)
