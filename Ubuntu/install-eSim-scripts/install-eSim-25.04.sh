@@ -24,6 +24,7 @@
 config_dir="$HOME/.esim"
 config_file="config.ini"
 eSim_Home=`pwd`
+installer_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ngspiceFlag=0
 
 ## All Functions goes here
@@ -64,16 +65,23 @@ function installNghdl
 
     echo "Installing NGHDL..........................."
     unzip -o nghdl.zip
+    echo "Applying Ubuntu 25.04 NGHDL compatibility installer..."
+    cp "$installer_script_dir/install-nghdl-25.04.sh" \ nghdl/install-nghdl-scripts/install-nghdl-25.04.sh
     cd nghdl/
-    chmod +x install-nghdl.sh
+    chmod +x install-nghdl-scripts/install-nghdl-25.04.sh
 
     # Do not trap on error of any command. Let NGHDL script handle its own errors.
     trap "" ERR
 
-    ./install-nghdl.sh --install       # Install NGHDL
+    install-nghdl-scripts/install-nghdl-25.04 --install nghdl_status=$       # Install NGHDL
         
     # Set trap again to error_exit function to exit on errors
     trap error_exit ERR
+
+    if [ "$nghdl_status" -ne 0 ]; then
+	echo "NGHDL installation failed with status $nghdl_status"
+	return "$nghdl_status"
+    fi
 
     ngspiceFlag=1
     cd ../
@@ -133,7 +141,7 @@ function installKicad
                 fi
             else
                 echo "KiCad 8.0 is already installed."
-                exit 0
+                return 0
             fi
         fi
 
@@ -228,34 +236,27 @@ function installDependency
 function copyKicadLibrary
 {
 
+    echo "Extracting custom KiCad Library..."
     #Extract custom KiCad Library
     tar -xJf library/kicadLibrary.tar.xz
 
-    if [ -d ~/.config/kicad/6.0 ];then
-        echo "kicad config folder already exists"
-    else 
-        echo ".config/kicad/6.0 does not exist"
-        mkdir -p ~/.config/kicad/6.0
-    fi
+    kicad_version="8.0"
+    kicad_config_dir="$HOME/.config/kicad/$kicad_version"
 
-    # Copy symbol table for eSim custom symbols 
-    cp kicadLibrary/template/sym-lib-table ~/.config/kicad/6.0/
-    echo "symbol table copied in the directory"
+    echo "Using KiCad configuration directory: $kicad_config_dir"
+    mkdir -p "$kicad_config_dir"
 
-    # Copy KiCad symbols made for eSim
-    sudo cp -r kicadLibrary/eSim-symbols/* /usr/share/kicad/symbols/
+    echo "Copying eSim symbol table..."
+    cp kicadLibrary/template/sym-Lib-table \ "$kicad_config_dir/"
 
-    set +e      # Temporary disable exit on error
-    trap "" ERR # Do not trap on error of any command
-    
-    # Remove extracted KiCad Library - not needed anymore
+    echo "Copying eSim custom table..."
+    sudo cp -r kicadLibrary/esim-symbols/* \ /usr/share/kicad/symbols/
+
     rm -rf kicadLibrary
 
-    set -e      # Re-enable exit on error
-    trap error_exit ERR
+    sudo chown -R "$USER:$USER" \ /usr/share/kicad/symbols/
 
-    #Change ownership from Root to the User
-    sudo chown -R $USER:$USER /usr/share/kicad/symbols/
+    echo "Kicad Library configured successfully."
 
 }
 
