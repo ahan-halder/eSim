@@ -259,7 +259,7 @@ function copyKicadLibrary
         "$kicad_config_dir/"
 
     echo "Copying eSim custom table..."
-    sudo cp -r kicadLibrary/esim-symbols/* \ /usr/share/kicad/symbols/
+    sudo cp -r kicadLibrary/eSim-symbols/* \ /usr/share/kicad/symbols/
 
     rm -rf kicadLibrary
 
