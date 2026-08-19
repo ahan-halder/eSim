@@ -3,6 +3,19 @@ eSim Installer (Ubuntu OS)
 
 It contains the documentation to package eSim for Ubuntu OS.
 
+---
+
+## Ubuntu 25.04 Compatibility – Internship Task 4
+
+As part of the FOSSEE eSim Semester Long Internship (Autumn 2026), eSim 2.5
+was tested on Ubuntu 25.04 and found to fail installation due to several
+compatibility issues.  The issues were investigated, fixed, and verified on a
+VirtualBox test VM.  The full investigation is documented here:
+
+[Ubuntu 25.04 Compatibility Investigation Report](REPORT.md)
+
+---
+
 > Note: If planning to freeze the eSim source code for a target platform (Ubuntu OS), then refer this [documentation](executable.md). Remember to update the installer script to work with this executable!
 
 
