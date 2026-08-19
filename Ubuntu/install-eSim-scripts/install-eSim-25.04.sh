@@ -255,7 +255,7 @@ function copyKicadLibrary
     mkdir -p "$kicad_config_dir"
 
     echo "Copying eSim symbol table..."
-    cp kicadLibrary/template/sym-Lib-table \ "$kicad_config_dir/"
+    cp kicadLibrary/template/sym-lib-table \ "$kicad_config_dir/"
 
     echo "Copying eSim custom table..."
     sudo cp -r kicadLibrary/esim-symbols/* \ /usr/share/kicad/symbols/
