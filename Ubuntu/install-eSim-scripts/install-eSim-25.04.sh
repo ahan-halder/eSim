@@ -65,22 +65,30 @@ function installNghdl
 
     echo "Installing NGHDL..........................."
     unzip -o nghdl.zip
+
     echo "Applying Ubuntu 25.04 NGHDL compatibility installer..."
-    cp "$installer_script_dir/install-nghdl-25.04.sh" \ nghdl/install-nghdl-scripts/install-nghdl-25.04.sh
-    cd nghdl/
+
+    cp "$installer_script_dir/install-nghdl-25.04.sh" \
+       nghdl/install-nghdl-scripts/install-nghdl-25.04.sh
+
+    cd nghdl/ || return 1
+
     chmod +x install-nghdl-scripts/install-nghdl-25.04.sh
 
-    # Do not trap on error of any command. Let NGHDL script handle its own errors.
+    # Allow NGHDL installer to return its own exit status.
     trap "" ERR
+    set +e
 
-    install-nghdl-scripts/install-nghdl-25.04 --install nghdl_status=$       # Install NGHDL
-        
-    # Set trap again to error_exit function to exit on errors
+    bash install-nghdl-scripts/install-nghdl-25.04.sh --install
+    nghdl_status=$?
+
+    set -e
     trap error_exit ERR
 
     if [ "$nghdl_status" -ne 0 ]; then
-	echo "NGHDL installation failed with status $nghdl_status"
-	return "$nghdl_status"
+        echo "NGHDL installation failed with status $nghdl_status"
+        cd ../
+        return "$nghdl_status"
     fi
 
     ngspiceFlag=1
@@ -418,7 +426,7 @@ elif [ $option == "--uninstall" ];then
         sudo apt purge -y kicad kicad-footprints kicad-libraries kicad-symbols kicad-templates
         sudo rm -rf /usr/share/kicad
 	sudo rm /etc/apt/sources.list.d/kicad*
-        rm -rf $HOME/.config/kicad/6.0
+        rm -rf $HOME/.config/kicad/8.0
 
         echo "Removing Virtual env......................."
         sudo rm -r $config_dir/env

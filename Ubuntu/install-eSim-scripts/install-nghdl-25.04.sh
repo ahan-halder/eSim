@@ -297,8 +297,7 @@ elif [ $option == "--uninstall" ];then
 
     echo "Removing libxaw7-dev..............."
     sudo apt purge -y libxaw7-dev
-    echo "Removing LLVM......................"
-    sudo apt-get purge -y llvm-${llvm_version} llvm-${llvm_version}-dev
+    echo "Keeping shared LLVM 18 and Clang 18 system dependencies installed."
     echo "Removing GNAT......................"
     sudo apt purge -y gnat
 else 
