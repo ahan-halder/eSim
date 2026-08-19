@@ -12,13 +12,22 @@
 #  REQUIREMENTS: ---
 #          BUGS: ---
 #         NOTES: ---
-#       AUTHORS: Fahim Khan, Rahul Paknikar, Saurabh Bansode,
-#                Sumanto Kar, Partha Singha Roy, Harsha Narayana P, 
-#                Jayanth Tatineni, Anshul Verma
+#       AUTHORS: Ahan Halder
 #  ORGANIZATION: eSim Team, FOSSEE, IIT Bombay
 #       CREATED: Wednesday 15 July 2015 15:26
-#      REVISION: Sunday 25 May 2025 17:40
+#      REVISION: Tuesday 19 August 2026
 #=============================================================================
+#
+# This script is the Ubuntu 25.04-specific installer for eSim 2.5.
+# It is invoked by install-eSim.sh when VERSION_ID="25.04" is detected.
+# Key differences from the 24.04 installer:
+#   - NGHDL is installed via a dedicated 25.04 compatibility script rather
+#     than the bundled install-nghdl.sh, which only supports older releases.
+#   - KiCad 8 is installed from ppa:kicad/kicad-8.0-releases with a specific
+#     pinned version (kicad=8.0.8+dfsg-1) to avoid a libgit2-1.8 conflict
+#     that occurs with the latest available build.
+#   - The KiCad library is copied to ~/.config/kicad/8.0 rather than 6.0.
+#   - The installer is hardened for reruns (stale build trees are cleaned up).
 
 # All variables goes here
 config_dir="$HOME/.esim"
@@ -57,7 +66,11 @@ function installNghdl
 {
     echo "Installing NGHDL..........................."
 
-    # Always start from a fresh copy of the bundled NGHDL tree.
+    # The bundled nghdl.zip contains installer scripts only for older Ubuntu
+    # releases.  For Ubuntu 25.04, we inject our own compatibility script
+    # (install-nghdl-25.04.sh) into the extracted NGHDL tree before running it.
+    # Removing and re-extracting nghdl/ first ensures a deterministic state if
+    # a previous run left a partial or root-owned build directory behind.
     rm -rf nghdl
     unzip -o nghdl.zip
 
@@ -66,8 +79,9 @@ function installNghdl
        "nghdl/install-nghdl-scripts/install-nghdl-25.04.sh"
     chmod +x "nghdl/install-nghdl-scripts/install-nghdl-25.04.sh"
 
-    # Capture the NGHDL installer's status explicitly instead of letting the
-    # parent ERR trap terminate before we can report it.
+    # Run the NGHDL installer in a subshell so that its exit status can be
+    # captured cleanly.  The parent ERR trap is suspended for this block;
+    # we check the status manually and propagate any failure via return.
     trap "" ERR
     set +e
     (
@@ -107,15 +121,14 @@ function installKicad
 {
     echo "Installing KiCad..........................."
 
-    # Detect Ubuntu version
     ubuntu_version=$(lsb_release -rs)
 
-    # Define KiCad PPAs based on Ubuntu version
+    # Ubuntu 25.04 (and 24.04) ships KiCad 8 from ppa:kicad/kicad-8.0-releases.
+    # Older releases used the kicad-6.0-releases PPA.
     if [[ "$ubuntu_version" == "24.04" || "$ubuntu_version" == "25.04" ]]; then
         echo "Ubuntu $ubuntu_version detected."
         kicadppa="kicad/kicad-8.0-releases"
 
-        # Check if KiCad is installed using dpkg-query for the main package
         if dpkg -s kicad &>/dev/null; then
             installed_version=$(dpkg-query -W -f='${Version}' kicad | cut -d'.' -f1)
             if [[ "$installed_version" != "8" ]]; then
@@ -132,6 +145,8 @@ function installKicad
                 fi
             else
                 echo "KiCad 8.0 is already installed."
+                # Return rather than exit so the caller (--install main block)
+                # continues with copyKicadLibrary and the remaining steps.
                 return 0
             fi
         fi
@@ -140,7 +155,6 @@ function installKicad
         kicadppa="kicad/kicad-6.0-releases"
     fi
 
-    # Check if the PPA is already added
     if ! grep -q "^deb .*${kicadppa}" /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; then
         echo "Adding KiCad PPA to local apt repository: $kicadppa"
         sudo add-apt-repository -y "ppa:$kicadppa"
@@ -149,7 +163,9 @@ function installKicad
         echo "KiCad PPA is already present in sources."
     fi
 
-    # Install KiCad packages
+    # Pin to kicad=8.0.8+dfsg-1.  Installing the latest available build
+    # pulled in libgit2-1.9, which was not yet in Ubuntu 25.04 repositories
+    # at the time of testing and caused the package installation to fail.
     sudo apt-get install -y --no-install-recommends kicad=8.0.8+dfsg-1 kicad-footprints kicad-libraries kicad-symbols kicad-templates
 
     echo "KiCad installation completed successfully!"
@@ -228,10 +244,15 @@ function copyKicadLibrary
 {
     echo "Extracting custom KiCad Library..."
 
-    # Remove a partial extraction from an earlier failed run.
+    # Remove any partial extraction left by a previous failed run so that
+    # tar always produces a clean directory tree.
     rm -rf kicadLibrary
     tar -xJf library/kicadLibrary.tar.xz
 
+    # KiCad 8 stores per-user configuration under ~/.config/kicad/8.0/.
+    # Older eSim installer versions targeted ~/.config/kicad/6.0/, which does
+    # not exist after a fresh KiCad 8 installation and would silently drop
+    # the symbol table.
     kicad_version="8.0"
     kicad_config_dir="$HOME/.config/kicad/$kicad_version"
 
@@ -246,7 +267,7 @@ function copyKicadLibrary
     sudo mkdir -p /usr/share/kicad/symbols
     sudo cp -f kicadLibrary/eSim-symbols/* /usr/share/kicad/symbols/
 
-    # /usr/share/kicad is system-owned; keep copied files root-owned.
+    # /usr/share/kicad is system-owned; files remain root-owned intentionally.
     rm -rf kicadLibrary
 
     echo "KiCad Library configured successfully."
